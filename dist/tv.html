@@ -108,6 +108,15 @@
   .week li .ep{flex:0 0 auto;color:#9FB8A8;font-size:.74em;font-variant-numeric:tabular-nums}
   .week li .rt{flex:0 0 auto;color:#E0BA74;font-size:.74em;font-variant-numeric:tabular-nums}
   .week li .dt{flex:1 1 auto;color:#9C9279;font-size:.72em;min-width:3.2em;text-align:left}
+  .match-pair{display:inline-flex;align-items:center;gap:.34em;direction:rtl;max-width:100%;white-space:nowrap;vertical-align:middle}
+  .club-name{display:inline-flex;align-items:center;gap:.28em;min-width:0;white-space:nowrap}
+  .club-name>span:last-child{overflow:hidden;text-overflow:ellipsis}
+  .club-badge-wrap{display:inline-grid;place-items:center;flex:0 0 1.08em;width:1.08em;height:1.08em;vertical-align:middle}
+  .club-badge-wrap>*{grid-area:1/1}
+  .club-badge{width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 1px 2px rgba(0,0,0,.45))}
+  .club-badge-fallback{display:grid;place-items:center;width:72%;height:72%;border:1px solid rgba(220,184,111,.8);border-radius:50%;color:#E0BA74;font-size:.5em;line-height:1}
+  .match-vs{color:#D6AF6B;font-size:.76em;flex:none}
+  .week li .match-pair{font-size:.94em}
   .week ul.flip li{animation:weekIn .5s ease both}
   .week ul.flip li:nth-child(2){animation-delay:.06s}
   .week ul.flip li:nth-child(3){animation-delay:.12s}
@@ -203,6 +212,7 @@
   .mblock:not(:last-child){padding-inline-end:1.6vw;border-inline-end:1px solid rgba(220,184,111,.25)}
   .mrow:has(.mblock + .mblock) .big{font-size:clamp(18px,1.6vw,34px)}
   .mblock .big{justify-content:flex-end;min-width:0}
+  .mblock .big>.match-pair{overflow:hidden;text-overflow:ellipsis;padding:0;margin:0;gap:.3em}
   .mrow.flip .mblock{animation:weekIn .5s ease both}
   .mrow.flip .mblock + .mblock{animation-delay:.08s}
   .mblock .big > span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;
@@ -362,9 +372,8 @@ const CONFIG = {
   widget: _Q.get('widget') === '1',
 };
 
-const GREG = 'ar-SA-u-ca-gregory-nu-arab';
-const AR = ['٠','١','٢','٣','٤','٥','٦','٧','٨','٩'];
-const ar = s => String(s).replace(/[0-9]/g, d => AR[+d]);
+const GREG = 'ar-SA-u-ca-gregory-nu-latn';
+const ar = s => String(s);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const pad = n => String(n).padStart(2,'0');
 
@@ -623,6 +632,8 @@ const TEAM_BY_ID = {"137855": "أبها", "137721": "الأهلي", "152917": "�
 const TEAM_KEYS = {};
 // first entry wins on a clash: the Saudi "Al-Faisaly" before the Jordanian "Al Faisaly"
 for(const [en, arName] of Object.entries(TEAM_AR)) if(!(teamKey(en) in TEAM_KEYS)) TEAM_KEYS[teamKey(en)] = arName;
+const TEAM_BADGES = (()=>{ try{ return JSON.parse(localStorage.getItem('teamBadges') || '{}'); }catch(e){ return {}; } })();
+const BADGE_LOOKUPS = new Set();
 let MATCHES_LOADED = false;   // a refresh answered; until then the saved row stays
 let MATCHES = {};   // team id -> next event
 let RESULTS = {};   // team id -> recent events
@@ -707,6 +718,58 @@ function arName(en, kind, id){
 }
 const teamAr = (s, id) => arName(s, 'team', id);
 
+function safeTeamBadge(raw){
+  if(!raw) return '';
+  try{
+    const url = new URL(String(raw).trim().replace(/^http:\/\//i, 'https://'));
+    if(url.protocol !== 'https:' || !['r2.thesportsdb.com','www.thesportsdb.com'].includes(url.hostname)
+       || !url.pathname.startsWith('/images/media/team/')) return '';
+    return url.href;
+  }catch(e){ return ''; }
+}
+function teamBadgeUrl(ev, side){
+  return safeTeamBadge(ev && ev[`str${side}TeamBadge`])
+    || safeTeamBadge(TEAM_BADGES[String(ev && ev[`id${side}Team`] || '')]);
+}
+function clubMarkup(ev, side){
+  const name = teamAr(ev[`str${side}Team`], ev[`id${side}Team`]);
+  const badge = teamBadgeUrl(ev, side);
+  const initial = esc(String(name || '?').replace(/^ال/, '').slice(0, 1) || '?');
+  const image = badge ? `<img class="club-badge" src="${esc(badge)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()">` : '';
+  return `<span class="club-name"><span class="club-badge-wrap"><span class="club-badge-fallback">${initial}</span>${image}</span><span>${esc(name)}</span></span>`;
+}
+function matchPair(ev, middle){
+  return `<span class="match-pair">${clubMarkup(ev,'Home')}<span class="match-vs">${middle}</span>${clubMarkup(ev,'Away')}</span>`;
+}
+async function loadTeamBadge(id){
+  if(!id || TEAM_BADGES[id] || BADGE_LOOKUPS.has(id)) return false;
+  BADGE_LOOKUPS.add(id);
+  try{
+    const r = await fetchT(`https://www.thesportsdb.com/api/v1/json/${CONFIG.sportsKey}/lookupteam.php?id=${encodeURIComponent(id)}&badge=1`, 10000);
+    const team = ((await r.json()).teams || [])[0];
+    const url = safeTeamBadge(team && (team.strBadge || team.strTeamBadge));
+    if(!url) return false;
+    TEAM_BADGES[id] = url;
+    try{ localStorage.setItem('teamBadges', JSON.stringify(TEAM_BADGES)); }catch(e){}
+    return true;
+  }catch(e){ return false; }
+}
+async function loadMissingTeamBadges(){
+  const now = Date.now();
+  const events = [...Object.values(MATCHES), ...Object.values(RESULTS).flat(), ...Object.values(NEXT_LIST).flat()]
+    .filter(ev => ev && ev.idEvent && (finishedRecently(ev, now)
+      || (toDate(ev).getTime() >= now - 2.5*3600000 && toDate(ev).getTime() - now <= CONFIG.weekWindowDays*86400000)));
+  const ids = new Set();
+  for(const ev of events){
+    for(const side of ['Home','Away']){
+      if(!teamBadgeUrl(ev, side) && ev[`id${side}Team`]) ids.add(String(ev[`id${side}Team`]));
+    }
+  }
+  const list = [...ids], changed = [];
+  for(let i=0;i<list.length;i+=4) changed.push(...await Promise.all(list.slice(i,i+4).map(loadTeamBadge)));
+  if(changed.some(Boolean)){ renderMatches(); if(CONFIG.panel === 'matches') renderPanel(false); }
+}
+
 async function fetchNext(id){
   const r = await fetch(`https://www.thesportsdb.com/api/v1/json/${CONFIG.sportsKey}/eventsnext.php?id=${id}`,{cache:'no-store'});
   if(!r.ok) throw 0;
@@ -749,23 +812,22 @@ function matchSlot(id, now, shown){
     shown.add(done.idEvent);
     const day = new Intl.DateTimeFormat(GREG,{timeZone:CONFIG.timezone,weekday:'long'}).format(toDate(done));
     return `<div class="mblock">`
-      + `<div class="big"><span>${esc(teamAr(done.strHomeTeam, done.idHomeTeam))} <span class="sc">${ar(+done.intHomeScore)} - ${ar(+done.intAwayScore)}</span> ${esc(teamAr(done.strAwayTeam, done.idAwayTeam))}</span></div>`
+      + `<div class="big">${matchPair(done, `<span class="sc">${+done.intHomeScore} - ${+done.intAwayScore}</span>`)}</div>`
       + `<div class="sub">النتيجة النهائية · ${day}</div></div>`;
   }
   const ev = MATCHES[id];
   if(!ev || shown.has(ev.idEvent)) return '';
-  const home = esc(teamAr(ev.strHomeTeam, ev.idHomeTeam)), away = esc(teamAr(ev.strAwayTeam, ev.idAwayTeam));
   const d = toDate(ev), diff = d - now;
   if(diff < -2.5*3600000 || diff > CONFIG.weekWindowDays * 86400000) return '';   // in progress stays on screen
   shown.add(ev.idEvent);
   const p = new Intl.DateTimeFormat('en-GB',{timeZone:CONFIG.timezone,hour:'2-digit',minute:'2-digit',hour12:false})
     .formatToParts(d).reduce((a,x)=>(a[x.type]=x.value,a),{});
-  const t12 = ar(fmt12(+p.hour % 24, +p.minute));
+  const t12 = fmt12(+p.hour % 24, +p.minute);
   const live = diff <= 0 && ev.intHomeScore != null && ev.intAwayScore != null;
   const sub = diff > 0 ? `بعد ${shortRemaining(diff)} · ${t12}` : `<span class="live">مباشر</span> · ${liveStatus(ev, t12)}`;
-  const mid = live ? ` <span class="sc">${ar(+ev.intHomeScore)} - ${ar(+ev.intAwayScore)}</span> ` : ' × ';
+  const mid = live ? `<span class="sc">${+ev.intHomeScore} - ${+ev.intAwayScore}</span>` : '×';
   return `<div class="mblock">`
-       + `<div class="big"><span>${home}${mid}${away}</span></div>`
+       + `<div class="big">${matchPair(ev, mid)}</div>`
        + `<div class="sub">${sub}</div>`
        + `</div>`;
 }
@@ -775,7 +837,7 @@ function liveStatus(ev, t12){
   if(st === 'HT') return 'استراحة';
   if(['FT','AET','PEN'].includes(st)) return 'انتهت';
   const m = parseInt(ev.strProgress, 10);
-  return isNaN(m) ? `بدأت ${t12}` : `الدقيقة ${ar(m)}`;
+  return isNaN(m) ? `بدأت ${t12}` : `الدقيقة ${m}`;
 }
 
 // while a picked team is playing, refresh that event every 2 minutes
@@ -829,6 +891,7 @@ async function loadMatches(){
   MATCHES_LOADED = true;
   renderMatches();
   if(CONFIG.panel === 'matches') renderPanel(false);
+  loadMissingTeamBadges();
 }
 
 const TICKERS = [
@@ -1048,14 +1111,14 @@ function matchRows(){
     .sort((a, b) => a.t - b.t)
     .map(({ev, t}) => {
       const d = new Date(t), scored = ev.intHomeScore != null && ev.intAwayScore != null;
-      const mid = scored && now >= t ? ` <span class="sc">${ar(+ev.intHomeScore)} - ${ar(+ev.intAwayScore)}</span> ` : ' × ';
+      const mid = scored && now >= t ? `<span class="sc">${+ev.intHomeScore} - ${+ev.intAwayScore}</span>` : '×';
       const p = new Intl.DateTimeFormat('en-GB', {timeZone:CONFIG.timezone, hour:'2-digit', minute:'2-digit', hour12:false})
         .formatToParts(d).reduce((a, x) => (a[x.type] = x.value, a), {});
       const when = finishedRecently(ev, now) ? 'انتهت'
         : now >= t ? '<span class="live">مباشر</span>'
         : (new Intl.DateTimeFormat('en-CA', {timeZone:CONFIG.timezone}).format(d) === today ? 'اليوم' : day(d))
           + ' ' + fmt12(+p.hour % 24, +p.minute);
-      return `<li><span>${esc(teamAr(ev.strHomeTeam, ev.idHomeTeam))}${mid}${esc(teamAr(ev.strAwayTeam, ev.idAwayTeam))}</span><span class="dt">${when}</span></li>`;
+      return `<li>${matchPair(ev, mid)}<span class="dt">${when}</span></li>`;
     });
 }
 
