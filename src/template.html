@@ -108,6 +108,9 @@
   .week li .ep{flex:0 0 auto;color:#9FB8A8;font-size:.74em;font-variant-numeric:tabular-nums}
   .week li .rt{flex:0 0 auto;color:#E0BA74;font-size:.74em;font-variant-numeric:tabular-nums}
   .week li .dt{flex:1 1 auto;color:#9C9279;font-size:.72em;min-width:3.2em;text-align:left}
+  .week li.news span:first-child{flex:1 1 auto;max-width:68%}
+  .week li.news .source{flex:0 1 auto;color:#9FB8A8;font-size:.68em;max-width:20%;overflow:hidden;text-overflow:ellipsis}
+  .week li.news .dt{flex:0 0 auto;min-width:5em}
   .week ul.flip li{animation:weekIn .5s ease both}
   .week ul.flip li:nth-child(2){animation-delay:.06s}
   .week ul.flip li:nth-child(3){animation-delay:.12s}
@@ -336,8 +339,8 @@ const CONFIG = {
             : [_Q.has('team1') ? _Q.get('team1') : '136013', _Q.has('team2') ? _Q.get('team2') : '136137'])
     .map(x=>(x||'').trim()).filter(x=>/^\d+$/.test(x)).slice(0, 10),
   sportsKey: '123',
-  // the card beside the clock: shows | prayers | forecast | matches | verse | none (#week=0 from older builds = none)
-  panel: (p => ['shows','prayers','forecast','matches','verse','none'].includes(p) ? p : 'verse')
+  // the card beside the clock: shows | news | prayers | forecast | matches | verse | none (#week=0 from older builds = none)
+  panel: (p => ['shows','news','prayers','forecast','matches','verse','none'].includes(p) ? p : 'verse')
          (_Q.get('panel') || (_Q.get('week') === '0' ? 'none' : 'verse')),
   matchesPerPage: 2,
   matchPageMs: 15000,
@@ -978,30 +981,68 @@ function renderWeekPage(animate){
 let FORECAST = [];
 try{ FORECAST = JSON.parse(localStorage.getItem('forecast:' + location.hash) || '[]') || []; }catch(e){}
 let LIST_PAGE = 0;
-const PANEL_TITLE = {shows:'هذا الأسبوع', prayers:'مواقيت اليوم', forecast:'الأيام القادمة', matches:'مباريات فرقك'};
+const PANEL_TITLE = {shows:'هذا الأسبوع', news:'آخر الأخبار', prayers:'مواقيت اليوم', forecast:'الأيام القادمة', matches:'مباريات فرقك'};
 
 function renderPanel(animate){
   const ul = document.getElementById('week-list'), hd = document.getElementById('week-hd');
   const P = CONFIG.panel;
   if(P === 'shows'){ renderWeekPage(animate); return; }
   let rows = [];
-  if(P === 'prayers') rows = prayerRows();
+  if(P === 'news') rows = newsRows();
+  else if(P === 'prayers') rows = prayerRows();
   else if(P === 'forecast') rows = forecastRows();
   else if(P === 'matches') rows = matchRows();
   else if(P === 'verse'){ const q = quoteOfDay(); hd.textContent = q.title; rows = q.rows; }
   if(PANEL_TITLE[P]) hd.textContent = PANEL_TITLE[P];
   if(!rows.length){
     ul.classList.remove('flip');
-    ul.innerHTML = `<li class="empty">${P === 'matches' ? 'لا مباريات هذا الأسبوع' : 'لا تتوفر بيانات الآن'}</li>`;
+    ul.innerHTML = `<li class="empty">${P === 'matches' ? 'لا مباريات هذا الأسبوع' : P === 'news' ? (NEWS_LOADED ? 'لا تتوفر الأخبار الآن' : 'جارٍ تحميل الأخبار…') : 'لا تتوفر بيانات الآن'}</li>`;
     return;
   }
-  if(P === 'matches' && rows.length > WEEK_ROWS){        // page through, like the shows
+  if((P === 'matches' || P === 'news') && rows.length > WEEK_ROWS){        // page through, like the shows
     const start = (LIST_PAGE * WEEK_ROWS) % rows.length;
     rows = Array.from({length: WEEK_ROWS}, (_, i) => rows[(start + i) % rows.length]);
   }
   ul.innerHTML = rows.join('');
   ul.classList.remove('flip');
   if(animate){ void ul.offsetWidth; ul.classList.add('flip'); }
+}
+
+// General Arabic headlines for Saudi Arabia, aggregated by Google News RSS.
+const NEWS_URL = 'https://news.google.com/rss?hl=ar&gl=SA&ceid=SA:ar';
+const NEWS_KEY = 'news:sa-ar';
+const NEWS_ROWS = 5;
+let NEWS = (()=>{ try{ return JSON.parse(localStorage.getItem(NEWS_KEY) || '[]') || []; }catch(e){ return []; } })();
+let NEWS_LOADED = NEWS.length > 0;
+async function loadNews(){
+  try{
+    const r = await fetchT(NEWS_URL, 15000);
+    if(!r.ok) throw 0;
+    const xml = new DOMParser().parseFromString(await r.text(), 'application/xml');
+    if(xml.querySelector('parsererror')) throw 0;
+    const items = Array.from(xml.querySelectorAll('item')).map(item => ({
+      title: (item.querySelector('title')?.textContent || '').replace(/\\s+/g, ' ').trim(),
+      source: (item.querySelector('source')?.textContent || '').trim(),
+      date: (item.querySelector('pubDate')?.textContent || '').trim()
+    })).filter(x => x.title).slice(0, 20);
+    if(!items.length) throw 0;
+    NEWS = items;
+    NEWS_LOADED = true;
+    try{ localStorage.setItem(NEWS_KEY, JSON.stringify(NEWS)); }catch(e){}
+    LIST_PAGE = 0;
+    if(CONFIG.panel === 'news') renderPanel(false);
+  }catch(e){ NEWS_LOADED = true; if(CONFIG.panel === 'news') renderPanel(false); } // keep the last cached headlines when offline
+}
+function newsRows(){
+  if(!NEWS.length) return [];
+  const start = (LIST_PAGE * NEWS_ROWS) % NEWS.length;
+  return Array.from({length:Math.min(NEWS_ROWS, NEWS.length)}, (_, i) => NEWS[(start + i) % NEWS.length]).map(x => {
+    const d = Date.parse(x.date);
+    const when = Number.isFinite(d) ? new Intl.DateTimeFormat('ar-SA', {
+      timeZone:CONFIG.timezone, day:'numeric', month:'short', hour:'numeric', minute:'2-digit'
+    }).format(new Date(d)) : '';
+    return `<li class="news"><span>${esc(x.title)}</span><span class="source">${esc(x.source || 'الأخبار')}</span><span class="dt">${esc(when)}</span></li>`;
+  });
 }
 
 function prayerRows(){
@@ -1254,6 +1295,7 @@ function boot(){
   if(CONFIG.panel === 'none') document.querySelector('.week').style.display = 'none';
   else if(CONFIG.panel !== 'shows') renderPanel(false);   // its own data arrives with prayers, weather, matches
   loadPrayers(); loadMatches(); if(CONFIG.panel === 'shows') loadWeek(); loadWeather();
+  if(CONFIG.panel === 'news') loadNews();
   applyNight(); pixelShift();
 
   setInterval(tickClock, 1000);
@@ -1265,10 +1307,12 @@ function boot(){
   setInterval(loadMatches, 30*60*1000);
   setInterval(()=>TICKERS.forEach(loadTicker), 15*60*1000);
   if(CONFIG.panel === 'shows') setInterval(loadWeek, 6*3600*1000);
+  if(CONFIG.panel === 'news') setInterval(loadNews, 15*60*1000);
   setInterval(loadWeather, 30*60*1000);
   setInterval(()=>{
     if(CONFIG.panel === 'shows' && WEEK_POOL.length > WEEK_ROWS){ WEEK_PAGE++; renderWeekPage(true); }
     if(CONFIG.panel === 'matches'){ LIST_PAGE++; renderPanel(matchRows().length > WEEK_ROWS); }
+    if(CONFIG.panel === 'news' && NEWS.length > NEWS_ROWS){ LIST_PAGE++; renderPanel(true); }
   }, 25*1000);
   setInterval(applyNight, 60*1000);
   setInterval(pixelShift, 4*60*1000);
@@ -1289,12 +1333,14 @@ function bootWidget(){
   const P = CONFIG.panel;
   if(P === 'shows'){ loadWeek(); setInterval(loadWeek, 6*3600*1000); }
   else renderPanel(false);
+  if(P === 'news'){ loadNews(); setInterval(loadNews, 15*60*1000); }
   if(P === 'prayers'){ loadPrayers(); setInterval(loadPrayers, 6*3600*1000); setInterval(() => renderPanel(false), 15000); }
   if(P === 'forecast'){ loadWeather(); setInterval(loadWeather, 30*60*1000); }
   if(P === 'matches'){ loadMatches(); setInterval(loadMatches, 30*60*1000); setInterval(loadLive, 2*60000); }
   setInterval(() => {
     if(P === 'shows' && WEEK_POOL.length > WEEK_ROWS){ WEEK_PAGE++; renderWeekPage(true); }
     if(P === 'matches'){ LIST_PAGE++; renderPanel(matchRows().length > WEEK_ROWS); }
+    if(P === 'news' && NEWS.length > NEWS_ROWS){ LIST_PAGE++; renderPanel(true); }
   }, 25*1000);
   let lastDay = riyadhDayNumber();
   setInterval(() => { if(riyadhDayNumber() !== lastDay){ lastDay = riyadhDayNumber(); if(P === 'prayers') loadPrayers(); renderPanel(false); } }, 60*1000);

@@ -23,10 +23,11 @@ One grid with three rows — `grid-template-rows: auto 1fr auto`, stage padding 
 **Middle row — card left, clock centred in the space between the card and the right edge:**
 - Clock `font-size: clamp(120px, min(17vw, 31vh), 345px)` (≈300px tall), `line-height .92`. 12-hour always, Arabic-Indic digits, gold colon, and a small gold `ص`/`م` at `.28em` at the upper left of the time. Under it a tiny muted line `بتوقيت الرياض`.
   - Browsers ignore `letter-spacing` on Arabic script, digits included, and the display font's `٤` reaches into the next digit: put every digit in its own inline box with a `.09em` margin between boxes.
-- The card on the left: translucent panel (`rgba(4,14,9,.46)`, 1px gold border, radius 12, backdrop blur), width `min(760px, 48vw)`. Its content is a setting (`#panel=`): new episodes (below, the default), today's prayer times (next one gold, past ones dim), a 5-day forecast, every followed team's games this week, a verse one day and a hadith the next, or no card.
+- The card on the left: translucent panel (`rgba(4,14,9,.46)`, 1px gold border, radius 12, backdrop blur), width `min(760px, 48vw)`. Its content is a setting (`#panel=`): new episodes (below, the default), general Arabic news headlines with publisher names, today's prayer times (next one gold, past ones dim), a 5-day forecast, every followed team's games this week, a verse one day and a hadith the next, or no card.
   - Header `هذا الأسبوع` with a gold rule fading out to the left.
   - Exactly 5 rows, each a single flex line: show name (right, `flex:0 1 auto; max-width:68%`, ellipsis), then `الموسم ٣ · ح ٧`, then the rating `٨٫١`, then the weekday anchored at the far left (`flex:1 1 auto; text-align:left`). Hairline under every row.
   - Pool of up to 50 titles, 5 per page, a new page every 25 seconds with a staggered fade-up (`opacity` + `translateY(8px)`, 60ms per row) and wraparound at the end.
+- When `panel=news`, show five current Arabic Google News headlines for Saudi Arabia, with each publisher and publication time. Keep the last good feed cached offline; refresh every 15 minutes and rotate through up to 20 headlines every 25 seconds.
 
 **Bottom row — three panels under one gold hairline, `grid-template-columns: 1fr .9fr 1.3fr`, `align-items:start` (the three labels on one line):**
 All three are built identically — small gold label, big value, small sub-line — and must read as one set: same sizes, same baseline.
