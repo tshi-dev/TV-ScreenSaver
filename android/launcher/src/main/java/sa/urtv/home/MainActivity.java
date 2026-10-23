@@ -63,6 +63,9 @@ import java.util.Map;
  */
 public class MainActivity extends Activity {
 
+    private static final int PICK_HOME_WALLPAPERS = 401;
+    private static final int MAX_HOME_WALLPAPERS = 10;
+
     // Dock, hidden apps, Live TV and grid width come from res/values/config.xml.
     private String[] dockApps;
     private String liveTvPkg, inputPickerPkg;
@@ -319,7 +322,7 @@ public class MainActivity extends Activity {
         wifiPill = pill("واي فاي", R.drawable.ic_wifi);
         wifiPill.setOnClickListener(v -> launch(new Intent(Settings.ACTION_WIFI_SETTINGS)));
         TextView settings = pill("الإعدادات", R.drawable.ic_settings);
-        settings.setOnClickListener(v -> launch(new Intent(Settings.ACTION_SETTINGS)));
+        settings.setOnClickListener(v -> showSettingsMenu(settings));
         for (TextView p : isInstalled(SAVER_PKG) ? new TextView[]{inputs, wifiPill, settings, saver}
                                                   : new TextView[]{inputs, wifiPill, settings}) {
             right.addView(p, llp(-2, dp(30), dp(10), 0, 0, 0));
@@ -701,6 +704,97 @@ public class MainActivity extends Activity {
         rows.get(0).requestFocus();
     }
 
+    private void showSettingsMenu(View anchor) {
+        android.widget.PopupMenu menu = new android.widget.PopupMenu(this, anchor);
+        menu.getMenu().add("اختيار صور للشاشة الرئيسية").setOnMenuItemClickListener(item -> {
+            pickHomeWallpapers();
+            return true;
+        });
+        if (!homeWallpaperUris().isEmpty()) {
+            menu.getMenu().add("العودة إلى الخلفيات التلقائية").setOnMenuItemClickListener(item -> {
+                clearHomeWallpapers();
+                return true;
+            });
+        }
+        addSettingsItem(menu, "الشبكة والإنترنت", Settings.ACTION_WIFI_SETTINGS);
+        addSettingsItem(menu, "البلوتوث", Settings.ACTION_BLUETOOTH_SETTINGS);
+        addSettingsItem(menu, "الصوت", Settings.ACTION_SOUND_SETTINGS);
+        addSettingsItem(menu, "الصورة والشاشة", Settings.ACTION_DISPLAY_SETTINGS);
+        addSettingsItem(menu, "إدارة التطبيقات", Settings.ACTION_APPLICATION_SETTINGS);
+        addSettingsItem(menu, "كل إعدادات التلفزيون", Settings.ACTION_SETTINGS);
+        menu.show();
+    }
+
+    private void pickHomeWallpapers() {
+        Intent pick = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        pick.addCategory(Intent.CATEGORY_OPENABLE);
+        pick.setType("image/*");
+        pick.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+        pick.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        try {
+            startActivityForResult(pick, PICK_HOME_WALLPAPERS);
+        } catch (android.content.ActivityNotFoundException e) {
+            android.widget.Toast.makeText(this, "لا يوجد تطبيق لاختيار الصور على التلفزيون", android.widget.Toast.LENGTH_LONG).show();
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != PICK_HOME_WALLPAPERS || resultCode != RESULT_OK || data == null) return;
+        List<Uri> chosen = new ArrayList<>();
+        if (data.getClipData() != null) {
+            android.content.ClipData clips = data.getClipData();
+            for (int i = 0; i < clips.getItemCount() && chosen.size() < MAX_HOME_WALLPAPERS; i++) {
+                Uri uri = clips.getItemAt(i).getUri();
+                if (uri != null && !chosen.contains(uri)) chosen.add(uri);
+            }
+        } else if (data.getData() != null) {
+            chosen.add(data.getData());
+        }
+        if (chosen.isEmpty()) return;
+        List<String> saved = new ArrayList<>();
+        for (Uri uri : chosen) {
+            try {
+                getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            } catch (SecurityException ignored) { }
+            saved.add(uri.toString());
+        }
+        prefs().edit().putString("homeWallpaperUris", android.text.TextUtils.join("\n", saved))
+                .putInt("wallpaper", -1).apply();
+        wallIndex = -1;
+        nextWallpaper();
+        android.widget.Toast.makeText(this, "تم اختيار " + saved.size() + " صور للخلفية", android.widget.Toast.LENGTH_LONG).show();
+    }
+
+    private List<Uri> homeWallpaperUris() {
+        List<Uri> result = new ArrayList<>();
+        String stored = prefs().getString("homeWallpaperUris", "");
+        for (String value : stored.split("\\n")) {
+            if (!value.isEmpty()) {
+                try { result.add(Uri.parse(value)); } catch (RuntimeException ignored) { }
+            }
+        }
+        return result;
+    }
+
+    private void clearHomeWallpapers() {
+        for (Uri uri : homeWallpaperUris()) {
+            try { getContentResolver().releasePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION); }
+            catch (SecurityException ignored) { }
+        }
+        prefs().edit().remove("homeWallpaperUris").putInt("wallpaper", -1).apply();
+        wallIndex = -1;
+        nextWallpaper();
+    }
+
+    private void addSettingsItem(android.widget.PopupMenu menu, String label, String action) {
+        menu.getMenu().add(label).setOnMenuItemClickListener(item -> {
+            if (!launch(new Intent(action))) launch(new Intent(Settings.ACTION_SETTINGS));
+            return true;
+        });
+    }
+
     private String inputLabel(TvInputInfo t) {
         CharSequence c = t.loadCustomLabel(this);
         if (c == null || c.length() == 0) c = t.loadLabel(this);
@@ -880,19 +974,27 @@ public class MainActivity extends Activity {
     private void nextWallpaper() {
         handler.removeCallbacks(rotateWallpaper);
         if (wallpapers.length == 0) return;
-        final String[] remote = remotePhotos();
-        final int total = wallpapers.length + remote.length;
+        final List<Uri> own = homeWallpaperUris();
+        final boolean useOwn = !own.isEmpty();
+        final String[] remote = useOwn ? new String[0] : remotePhotos();
+        final int total = useOwn ? own.size() : wallpapers.length + remote.length;
         if (wallIndex < 0) wallIndex = prefs().getInt("wallpaper", -1);
         wallIndex = (wallIndex + 1) % total;
         prefs().edit().putInt("wallpaper", wallIndex).apply();
         wallChangedAt = SystemClock.elapsedRealtime();
         final int idx = wallIndex;
-        final String fallback = "wallpapers/" + wallpapers[idx % wallpapers.length];
+        final Uri ownUri = useOwn ? own.get(idx) : null;
+        final String fallback = useOwn ? null : "wallpapers/" + wallpapers[idx % wallpapers.length];
         new Thread(() -> {
-            refreshPhotoIndex();
-            pruneCachedPhotos(remotePhotos());
             Bitmap bm = null;
-            if (idx >= wallpapers.length) {
+            if (useOwn) {
+                try (java.io.InputStream in = getContentResolver().openInputStream(ownUri)) { bm = in == null ? null : decode(in); }
+                catch (Exception ignored) { }
+            } else {
+                refreshPhotoIndex();
+                pruneCachedPhotos(remotePhotos());
+            }
+            if (!useOwn && idx >= wallpapers.length) {
                 java.io.File f = new java.io.File(getFilesDir(), "photos/" + remote[idx - wallpapers.length]);
                 try {
                     if (!f.isFile()) {
@@ -907,7 +1009,7 @@ public class MainActivity extends Activity {
                     try (java.io.InputStream in = new java.io.FileInputStream(f)) { bm = decode(in); }
                 } catch (java.io.IOException ignored) { }
             }
-            if (bm == null) {
+            if (!useOwn && bm == null) {
                 try (java.io.InputStream in = getAssets().open(fallback)) { bm = decode(in); }
                 catch (java.io.IOException ignored) { }
             }
