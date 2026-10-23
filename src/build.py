@@ -270,6 +270,35 @@ def us_short(clubs):
     return out
 
 
+def us_short_en(clubs):
+    """The same nickname for the Latin page: «Los Angeles Lakers» -> «Lakers», keyed by the full English name."""
+    out = {}
+    for c in clubs:
+        en = c.get("en", "").split()
+        if c.get("sport") not in US_SPORTS or not en or "(" in c.get("en", "") or len(en) < 2:
+            continue
+        nick = 2 if " ".join(en[-2:]) in NICK_TWO_WORDS else 1
+        out[" ".join(en)] = " ".join(en[-nick:])
+    return out
+
+
+def i18n_for_screen():
+    """src/i18n.json -> the four dictionaries. Every language has exactly the Arabic keys (and the same weather codes):
+    a missing translation is a build error, not a silent fallback in the middle of the screen."""
+    path = ROOT / "src/i18n.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if set(data) != {"ar", "en", "fr", "es"}:
+        raise SystemExit(f"i18n: expected ar/en/fr/es, found {sorted(data)}")
+    base = set(data["ar"])
+    for lang in ("en", "fr", "es"):
+        missing, extra = base - set(data[lang]), set(data[lang]) - base
+        if missing or extra:
+            raise SystemExit(f"i18n: {lang} keys differ (missing {sorted(missing)}, extra {sorted(extra)})")
+        if set(data[lang]["wx"]) != set(data["ar"]["wx"]):
+            raise SystemExit(f"i18n: {lang} weather codes differ")
+    return js_json(data)
+
+
 def main():
     html = (ROOT / "src/template.html").read_text(encoding="utf-8")
     # 2 KB, so inlined in both pages
@@ -280,7 +309,11 @@ def main():
     clubs = json.loads((ROOT / "assets/shared/teams.json").read_text(encoding="utf-8"))
     by_id = {c["id"]: c["ar"] for c in clubs if c.get("id") and c.get("ar")}
     html = html.replace("__TEAMS_BY_ID__", js_json(by_id))
+    by_id_en = {c["id"]: c["en"] for c in clubs if c.get("id") and c.get("en")}
+    html = html.replace("__TEAMS_EN_BY_ID__", js_json(by_id_en))
     html = html.replace("__TEAMS_SHORT__", js_json(us_short(clubs)))
+    html = html.replace("__TEAMS_SHORT_EN__", js_json(us_short_en(clubs)))
+    html = html.replace("__I18N__", i18n_for_screen())
     # leagues of Formula 1, UFC, boxing and tennis, found by CI (.github/tools/team_ids.py); {} until a run delivers them
     html = html.replace("__EVENTS__", js_json(json.loads((ROOT / "assets/shared/events.json").read_text(encoding="utf-8"))))
     html = html.replace("__VERSES__", js_json(verses_for_screen()))
