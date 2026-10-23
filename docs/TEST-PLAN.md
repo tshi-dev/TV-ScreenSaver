@@ -118,6 +118,8 @@ Use the TV's clock or wait for the real moment; take a screenshot at each.
 | F4 | Idle TV, network traffic watched (router or `adb shell dumpsys netstats`): leave it 7 hours without the screensaver starting | No request to GitHub from the app; the 6-hour job runs and ends at once |
 | F5 | With the last check 6 hours old or more, start the screensaver (preview or the idle timer), watching the network; then start it again | One request to GitHub at the first start, none at the second; a start 6 hours after the first checks again |
 | F6 | Turn A16 to متوقف, wait out 6 hours, start the screensaver | No page request; A17 still works |
+| F7 | With a newer home build published (or a local `latest.json`), reopen the home screen | A gold «تحديث جاهز» pill appears by itself under the clock, at the right edge of the screen («تحديث N٪» while downloading); `files/update/home.apk` exists |
+| F8 | Press «تحديث جاهز», then confirm Android's installer screen | Android asks to install, the app restarts on the new `versionCode`, the pill disappears; an APK signed with another key is refused before the installer opens |
 
 ## 7. Power cycle (TCL)
 
