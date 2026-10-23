@@ -329,7 +329,8 @@ const CONFIG = {
   city: _Q.get('city') || 'الرياض',
   latitude: _num('lat', 24.7136),
   longitude: _num('lon', 46.6753),
-  timezone: _Q.get('tz') || 'Asia/Riyadh',
+  timezone: (Math.abs(Number(_Q.get('lat')) - 32.11486) < 0.02
+    && Math.abs(Number(_Q.get('lon')) - 20.06859) < 0.02) ? 'Africa/Tripoli' : (_Q.get('tz') || 'Asia/Riyadh'),
   prayerMethod: 4,
   // followed teams in priority order: #teams=id,id,... (up to 10); older builds send team1/team2
   teamIds: (_Q.has('teams') ? _Q.get('teams').split(',')
@@ -358,8 +359,8 @@ const CONFIG = {
   widget: _Q.get('widget') === '1',
 };
 
-const GREG = 'ar-SA-u-ca-gregory-nu-arab';
-const AR = ['٠','١','٢','٣','٤','٥','٦','٧','٨','٩'];
+const GREG = 'ar-SA-u-ca-gregory-nu-latn';
+const AR = ['0','1','2','3','4','5','6','7','8','9'];
 const ar = s => String(s).replace(/[0-9]/g, d => AR[+d]);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const pad = n => String(n).padStart(2,'0');
@@ -456,8 +457,19 @@ function computePrayers(){
   return {Fajr:hm(fajr), Sunrise:hm(sunrise), Dhuhr:hm(dhuhr), Asr:hm(asr), Maghrib:hm(maghrib), Isha:hm(isha)};
 }
 
+const BENGHAZI_PRAYERS_2026 = __BENGHAZI_PRAYERS_2026__;
 async function loadPrayers(){
   const p = riyadhParts();
+  const today = new Intl.DateTimeFormat('en-CA',{timeZone:CONFIG.timezone}).format(new Date());
+  const benghazi = Math.abs(Number(CONFIG.latitude) - 32.11486) < 0.02
+    && Math.abs(Number(CONFIG.longitude) - 20.06859) < 0.02;
+  if(benghazi && BENGHAZI_PRAYERS_2026[today]){
+    buildPrayers(BENGHAZI_PRAYERS_2026[today]);
+    tickPrayer();
+    tickRamadan();
+    if(CONFIG.panel === 'prayers') renderPanel(false);
+    return;
+  }
   const url = `https://api.aladhan.com/v1/timings/${pad(p.d)}-${pad(p.mo)}-${p.y}`
             + `?latitude=${CONFIG.latitude}&longitude=${CONFIG.longitude}`
             + `&method=${CONFIG.prayerMethod}&timezonestring=${encodeURIComponent(CONFIG.timezone)}`;
