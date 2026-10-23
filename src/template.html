@@ -105,6 +105,11 @@
   }
   .week li:last-child{border-bottom:none}
   .week li span:first-child{flex:0 1 auto;max-width:68%;overflow:hidden;text-overflow:ellipsis;padding-bottom:.3em;margin-bottom:-.3em}
+  .week li .match-clubs{display:inline-flex;align-items:center;gap:.3em;max-width:68%;overflow:hidden;text-overflow:ellipsis}
+  .week li .match-clubs .club{display:inline-flex;align-items:center;gap:.28em;min-width:0;max-width:44%;flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;padding-bottom:0;margin-bottom:0}
+  .week li .match-clubs .club-name{flex:0 1 auto;max-width:100%;overflow:hidden;text-overflow:ellipsis;padding-bottom:0;margin-bottom:0}
+  .week li .team-logo{width:1.05em;height:1.05em;object-fit:contain;flex:0 0 1.05em;opacity:0;transition:opacity .18s ease}
+  .week li .team-logo.loaded{opacity:1}
   .week li .ep{flex:0 0 auto;color:#9FB8A8;font-size:.74em;font-variant-numeric:tabular-nums}
   .week li .rt{flex:0 0 auto;color:#E0BA74;font-size:.74em;font-variant-numeric:tabular-nums}
   .week li .dt{flex:1 1 auto;color:#9C9279;font-size:.72em;min-width:3.2em;text-align:left}
@@ -130,6 +135,15 @@
   .week li.quote .nar .saw{font-size:1.45em}
   .week li.src{border-bottom:none;padding:.6vh 0 0;font-size:clamp(12px,.95vw,18px);color:#D6AF6B}
   .week .empty{color:#9A9078;font-size:clamp(14px,1.1vw,21px);font-weight:300;margin-top:1vh}
+  .standings{margin-top:.55vh;padding-top:.45vh;border-top:1px solid rgba(220,184,111,.2)}
+  .standings-hd{font-size:clamp(10px,.78vw,14px);letter-spacing:.12em;color:#D6AF6B;margin-bottom:.25vh}
+  .standing{display:grid;grid-template-columns:2.5em 1.05em minmax(0,1fr) auto;align-items:center;gap:.45em;
+    font-size:clamp(11px,.88vw,16px);line-height:1.3;color:#F6EEDC;padding:.12vh 0}
+  .standing .pos,.standing .points{font-variant-numeric:tabular-nums;color:#E0BA74}
+  .standing .points{direction:rtl;white-space:nowrap}
+  .standing .team-logo{width:1em;height:1em;object-fit:contain;opacity:0}
+  .standing .team-logo.loaded{opacity:1}
+  .standing .team-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
   .dates{text-align:right;flex-shrink:0}
   .hijri{font-size:clamp(19px,1.86vw,37px);font-weight:500;color:var(--sand);line-height:1.3}
@@ -290,6 +304,10 @@
     <div class="week">
       <div class="hd" id="week-hd">هذا الأسبوع</div>
       <ul id="week-list"><li class="empty">جارٍ التحميل…</li></ul>
+      <div class="standings" id="standings" hidden>
+        <div class="standings-hd">مراكز فرقك · النقاط</div>
+        <div id="standings-rows"></div>
+      </div>
     </div>
   </section>
 
@@ -1000,6 +1018,7 @@ function renderPanel(animate){
     rows = Array.from({length: WEEK_ROWS}, (_, i) => rows[(start + i) % rows.length]);
   }
   ul.innerHTML = rows.join('');
+  if(P === 'matches') { attachMatchBadges(ul); loadFavoriteStandings(); }
   ul.classList.remove('flip');
   if(animate){ void ul.offsetWidth; ul.classList.add('flip'); }
 }
@@ -1051,8 +1070,106 @@ function matchRows(){
         : now >= t ? '<span class="live">مباشر</span>'
         : (new Intl.DateTimeFormat('en-CA', {timeZone:CONFIG.timezone}).format(d) === today ? 'اليوم' : day(d))
           + ' ' + fmt12(+p.hour % 24, +p.minute);
-      return `<li><span>${esc(teamAr(ev.strHomeTeam, ev.idHomeTeam))}${mid}${esc(teamAr(ev.strAwayTeam, ev.idAwayTeam))}</span><span class="dt">${when}</span></li>`;
+      const home = `<span class="club"><span class="club-name">${esc(teamAr(ev.strHomeTeam, ev.idHomeTeam))}</span><img class="team-logo" data-team-id="${esc(ev.idHomeTeam || '')}" alt="" aria-hidden="true"></span>`;
+      const away = `<span class="club"><span class="club-name">${esc(teamAr(ev.strAwayTeam, ev.idAwayTeam))}</span><img class="team-logo" data-team-id="${esc(ev.idAwayTeam || '')}" alt="" aria-hidden="true"></span>`;
+      return `<li><span class="match-clubs">${home}${mid}${away}</span><span class="dt">${when}</span></li>`;
     });
+}
+
+// Current team crests from TheSportsDB, refreshed monthly and cached on this TV. The row itself
+// stays visible if a badge is unavailable; no generic or stale hard-coded crest is substituted.
+const TEAM_BADGES = (()=>{ try{ return JSON.parse(localStorage.getItem('teamBadges3') || '{}') || {}; }catch(e){ return {}; } })();
+const TEAM_BADGE_PENDING = new Set();
+function validTeamBadge(value){
+  try{ const u = new URL(value); return u.protocol === 'https:' && /(^|\.)thesportsdb\.com$/i.test(u.hostname) ? u.href : ''; }
+  catch(e){ return ''; }
+}
+async function getTeamBadge(id){
+  id = String(id || '');
+  if(!/^\d+$/.test(id)) return '';
+  const cached = TEAM_BADGES[id];
+  if(cached && Date.now() - cached.at < 7*86400000) return validTeamBadge(cached.url);
+  if(TEAM_BADGE_PENDING.has(id)) return '';
+  TEAM_BADGE_PENDING.add(id);
+  try{
+    const r = await fetchT(`https://www.thesportsdb.com/api/v1/json/${CONFIG.sportsKey}/lookupteam.php?id=${id}`, 10000);
+    const j = await r.json(), url = validTeamBadge((j.teams || [])[0]?.strBadge || '');
+    TEAM_BADGES[id] = {url, at:Date.now()};
+    try{ localStorage.setItem('teamBadges3', JSON.stringify(TEAM_BADGES)); }catch(e){}
+    return url;
+  }catch(e){ return validTeamBadge(cached && cached.url); }
+  finally{ TEAM_BADGE_PENDING.delete(id); }
+}
+function attachMatchBadges(root){
+  root.querySelectorAll('.team-logo[data-team-id]').forEach(img=>{
+    const id = img.dataset.teamId;
+    const cached = TEAM_BADGES[id] && validTeamBadge(TEAM_BADGES[id].url);
+    if(cached){ img.onload=()=>img.classList.add('loaded'); img.onerror=()=>img.remove(); img.src=cached; }
+    getTeamBadge(id).then(url=>{
+      if(url && img.isConnected && img.src !== url){ img.onload=()=>img.classList.add('loaded'); img.onerror=()=>img.remove(); img.src=url; }
+    });
+  });
+}
+
+// Full current league tables from ESPN; cache briefly, and keep the fixture list usable offline.
+const STANDING_TEAMS = {
+  '136022': {league:'ksa.1', aliases:['al nassr','al-nassr','al nassr fc','al-nassr fc']},
+  '133738': {league:'esp.1', aliases:['real madrid','real madrid cf','real madrid club de futbol']},
+  '133681': {league:'ita.1', aliases:['inter milan','internazionale','internazionale milano','inter']},
+};
+const STANDING_NAMES = {'136022':'النصر','133738':'ريال مدريد','133681':'إنتر ميلان'};
+const STANDING_CACHE = (()=>{ try{return JSON.parse(localStorage.getItem('favoriteStandings1')||'{}')||{};}catch(e){return {};}})();
+const STANDING_PENDING = {};
+function standingKey(s){ return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').trim(); }
+async function fetchStandings(league){
+  const key='espn:'+league, cached=STANDING_CACHE[key];
+  if(cached && Date.now()-cached.at < 4*3600000) return cached.rows;
+  if(STANDING_PENDING[league]) return STANDING_PENDING[league];
+  STANDING_PENDING[league]=(async()=>{
+    try{
+      const r=await fetchT(`https://site.api.espn.com/apis/v2/sports/soccer/${league}/standings`,12000);
+      if(!r.ok) throw 0;
+      const j=await r.json(), entries=[];
+      const visit=node=>{
+        if(!node || typeof node!=='object') return;
+        if(Array.isArray(node.entries)) entries.push(...node.entries);
+        if(Array.isArray(node.children)) node.children.forEach(visit);
+        if(node.standings) visit(node.standings);
+      };
+      visit(j);
+      const rows=entries.map(e=>{
+        const stats=Object.fromEntries((e.stats||[]).map(s=>[String(s.name||'').toLowerCase(),s.value ?? s.displayValue]));
+        return {name:e.team?.displayName||'',rank:stats.rank||stats.playoffseed||'',points:stats.points??stats.pts??''};
+      }).filter(x=>x.name);
+      if(!rows.length) throw 0;
+      STANDING_CACHE[key]={at:Date.now(),rows};
+      try{localStorage.setItem('favoriteStandings1',JSON.stringify(STANDING_CACHE));}catch(e){}
+      return rows;
+    }catch(e){return cached && Date.now()-cached.at < 10*86400000 ? cached.rows : [];}
+    finally{delete STANDING_PENDING[league];}
+  })();
+  return STANDING_PENDING[league];
+}
+async function loadFavoriteStandings(){
+  if(CONFIG.panel!=='matches') return;
+  const box=document.getElementById('standings'), out=document.getElementById('standings-rows');
+  if(!box||!out) return;
+  const teams=CONFIG.teamIds.map(id=>({id:String(id),...STANDING_TEAMS[String(id)]})).filter(t=>t.league);
+  if(!teams.length){box.hidden=true;return;}
+  const tables={};
+  await Promise.all([...new Set(teams.map(t=>t.league))].map(async l=>tables[l]=await fetchStandings(l)));
+  if(CONFIG.panel!=='matches') return;
+  const rows=teams.map(t=>{
+    const found=tables[t.league].find(row=>{
+      const n=standingKey(row.name);
+      return t.aliases.some(a=>{const k=standingKey(a);return n===k||n.startsWith(k+' ')||k.startsWith(n+' ');});
+    });
+    if(!found || !found.rank || found.points==='') return '';
+    return `<div class="standing"><span class="pos">${ar(found.rank)}.</span><img class="team-logo" data-team-id="${esc(t.id)}" alt="" aria-hidden="true"><span class="team-name">${STANDING_NAMES[t.id]}</span><span class="points">${ar(found.points)} نقطة</span></div>`;
+  }).filter(Boolean);
+  out.innerHTML=rows.join('');
+  box.hidden=!rows.length;
+  if(rows.length) attachMatchBadges(out);
 }
 
 // verse one day, hadith the next. Verse texts come from the Quran API via CI (.github/tools/fetch_verses.py), never typed.
