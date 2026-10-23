@@ -468,7 +468,7 @@ async function loadPrayers(){
   try{
     const r = await fetchT(url, 12000);
     const j = await r.json();
-    if(!j?.data?.timings?.Fajr) throw 0;
+    if(!(j && j.data && j.data.timings && j.data.timings.Fajr)) throw 0;
     buildPrayers(j.data.timings);
   }catch(e){
     try{ buildPrayers(computePrayers()); }catch(_){}
@@ -711,8 +711,8 @@ async function fetchNext(id){
   const r = await fetch(`https://www.thesportsdb.com/api/v1/json/${CONFIG.sportsKey}/eventsnext.php?id=${id}`,{cache:'no-store'});
   if(!r.ok) throw 0;
   const j = await r.json();
-  if(j?.events) NEXT_LIST[id] = j.events;
-  return (j?.events || [])[0] || null;
+  if(j && j.events) NEXT_LIST[id] = j.events;
+  return (j && j.events ? j.events : [])[0] || null;
 }
 function toDate(ev){
   const s = ev.strTimestamp || `${ev.dateEvent}T${ev.strTime || '00:00:00'}`;
@@ -878,7 +878,8 @@ async function loadTicker(t){
       if(!r.ok) throw 0;
       const j = await r.json();
       const c = j && j[t.cg] ? j[t.cg] : null;
-      const d = c ? (c.usd_24h_change ?? c.usd_24hr_change ?? null) : null;
+      const d = c ? (c.usd_24h_change != null ? c.usd_24h_change
+        : (c.usd_24hr_change != null ? c.usd_24hr_change : null)) : null;
       paintDir(t, typeof d === 'number' ? d >= 0 : null);
       return;
     }
@@ -1095,12 +1096,14 @@ async function loadWeather(){
     const d = document.getElementById('wx-desc');
     d.textContent = WX_CODES[j.current.weather_code] || '';
     d.classList.remove('dust');
-    const hi = j.daily?.temperature_2m_max?.[0], lo = j.daily?.temperature_2m_min?.[0];
+    const hi = j.daily && j.daily.temperature_2m_max ? j.daily.temperature_2m_max[0] : undefined;
+    const lo = j.daily && j.daily.temperature_2m_min ? j.daily.temperature_2m_min[0] : undefined;
     document.getElementById('wx-range').textContent =
       (hi != null && lo != null) ? `${ar(Math.round(hi))}° / ${ar(Math.round(lo))}°` : '';
     const dl = j.daily || {};
-    FORECAST = (dl.time || []).map((t, i) => ({date:t, code:dl.weather_code?.[i],
-      hi:dl.temperature_2m_max?.[i], lo:dl.temperature_2m_min?.[i]})).filter(x => x.hi != null && x.lo != null);
+    FORECAST = (dl.time || []).map((t, i) => ({date:t, code:dl.weather_code ? dl.weather_code[i] : undefined,
+      hi:dl.temperature_2m_max ? dl.temperature_2m_max[i] : undefined,
+      lo:dl.temperature_2m_min ? dl.temperature_2m_min[i] : undefined})).filter(x => x.hi != null && x.lo != null);
     try{ localStorage.setItem('forecast:' + location.hash, JSON.stringify(FORECAST)); }catch(e){}
     if(CONFIG.panel === 'forecast') renderPanel(false);
   }catch(e){ return; }   // keep the last reading; with none only the city shows
