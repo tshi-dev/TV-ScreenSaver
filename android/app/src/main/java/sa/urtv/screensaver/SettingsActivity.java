@@ -104,6 +104,8 @@ public class SettingsActivity extends Activity {
             new Runnable() { public void run() { pickMany("events", "رياضات أخرى", Prefs.EVENTS, "بدون اختيار = بدون"); } });
 
         header("العرض");
+        row("اللغة", Prefs.languageLabel(prefs.language()), R.drawable.ic_language,
+            new Runnable() { public void run() { pickLanguage(); } });
         row("الأرقام", Prefs.digitsLabel(prefs.digits()), R.drawable.ic_language,
             new Runnable() { public void run() { pickDigits(); } });
         row("تنبيه قبل الأذان", prefs.adhanBar() ? "يعمل · شريط في أعلى الشاشة آخر ١٠ دقائق، ثم حتى الإقامة" : "متوقف", R.drawable.ic_eye,
@@ -679,6 +681,18 @@ public class SettingsActivity extends Activity {
             .setMessage(countdownLabel())
             .setPositiveButton("مسح", (d, w) -> { prefs.setCountdown("", ""); render(); })
             .setNegativeButton("إلغاء", null).show();
+    }
+
+    private void pickLanguage() {
+        String[] labels = new String[Prefs.UI_LANGS.length];
+        int sel = 0;
+        for (int i = 0; i < labels.length; i++) {
+            labels[i] = Prefs.UI_LANGS[i][1];
+            if (Prefs.UI_LANGS[i][0].equals(prefs.language())) sel = i;
+        }
+        new AlertDialog.Builder(this, DIALOG_THEME).setTitle("اللغة")
+            .setSingleChoiceItems(labels, sel, (d, i) -> { prefs.setLanguage(Prefs.UI_LANGS[i][0]); d.dismiss(); render(); })
+            .show();
     }
 
     private void pickDigits() {

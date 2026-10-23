@@ -13,6 +13,7 @@ import org.json.JSONObject;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /** Everything the user picks in settings, and the dashboard URL built from it. */
 final class Prefs {
@@ -72,8 +73,12 @@ final class Prefs {
     // minutes between background photos (sent to the page as #photos=; 30 is what it always did)
     static final String[] PHOTO_MINUTES = {"5", "10", "15", "30", "60"};
 
-    // digits on the screen (sent to the page as #digits=; hindi is what it always showed)
-    static final String[][] DIGITS = {{"hindi", "هندية ١٢٣"}, {"latin", "عربية 123"}};
+    // interface language (sent to the page as #lang=; auto follows the TV's language, Arabic when it is none of the four)
+    static final String[][] UI_LANGS = {{"auto", "تلقائي"}, {"ar", "العربية"}, {"en", "English"},
+        {"fr", "Français"}, {"es", "Español"}};
+
+    // digits on the screen (sent to the page as #digits=; auto follows the language, Arabic -> hindi, others -> latin)
+    static final String[][] DIGITS = {{"auto", "تلقائي"}, {"hindi", "هندية ١٢٣"}, {"latin", "لاتينية 123"}};
 
     // the national days (sent to the page as #national=; auto shows them on their days, off never)
     static final String[][] NATIONAL = {{"auto", "تلقائي"}, {"off", "إيقاف"}};
@@ -250,8 +255,31 @@ final class Prefs {
     String minRating() { return sp.getString("minRating", "7"); }
     void setMinRating(String v) { sp.edit().putString("minRating", v).apply(); }
 
-    String digits() { return sp.getString("digits", "hindi"); }
+    String language() { return sp.getString("lang", "auto"); }
+    void setLanguage(String v) { sp.edit().putString("lang", v).apply(); }
+
+    /** the page's language: the pick, or the TV's when it is one of the four, else Arabic. */
+    String lang() {
+        String v = language();
+        if ("ar".equals(v) || "en".equals(v) || "fr".equals(v) || "es".equals(v)) return v;
+        String sys = Locale.getDefault().getLanguage();
+        return ("ar".equals(sys) || "en".equals(sys) || "fr".equals(sys) || "es".equals(sys)) ? sys : "ar";
+    }
+
+    static String languageLabel(String v) {
+        for (String[] l : UI_LANGS) if (l[0].equals(v)) return l[1];
+        return UI_LANGS[0][1];
+    }
+
+    String digits() { return sp.getString("digits", "auto"); }
     void setDigits(String v) { sp.edit().putString("digits", v).apply(); }
+
+    /** auto follows the language (Arabic -> Hindi, others -> Latin); an explicit choice wins in any language. */
+    String digitsEffective() {
+        String v = digits();
+        if ("hindi".equals(v) || "latin".equals(v)) return v;
+        return "ar".equals(lang()) ? "hindi" : "latin";
+    }
 
     static String digitsLabel(String v) {
         for (String[] d : DIGITS) if (d[0].equals(v)) return d[1];
@@ -366,7 +394,8 @@ final class Prefs {
             + "&shows=" + join(ids, ",")
             + "&minrating=" + minRating()
             + "&photos=" + photoMinutes()
-            + "&digits=" + digits()
+            + "&lang=" + lang()
+            + "&digits=" + digitsEffective()
             + "&cardstyle=" + cardStyle()
             + "&adhanbar=" + (adhanBar() ? "1" : "0")
             + "&national=" + national()
