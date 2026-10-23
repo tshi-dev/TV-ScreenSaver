@@ -50,6 +50,13 @@ jobs:
           cp android/app/build/outputs/apk/release/app-release.apk urtv-screensaver.apk
           cp android/launcher/build/outputs/apk/release/launcher-release.apk urtv-home.apk
 
+      # what the launcher's self-update reads: the build number it compares with its own versionCode
+      - name: latest.json
+        run: |
+          printf '{"run": %s, "version": "3.%s", "sha": "%s", "apk": "urtv-home.apk", "screensaver": "urtv-screensaver.apk"}\n' \
+            "$GITHUB_RUN_NUMBER" "$GITHUB_RUN_NUMBER" "$GITHUB_SHA" > latest.json
+          cat latest.json
+
       # apksigner, not keytool: the home APK has no v1 (JAR) signature, so keytool sees no signer in it
       - name: Which key signed them
         run: |
@@ -64,8 +71,9 @@ jobs:
           path: |
             urtv-screensaver.apk
             urtv-home.apk
+            latest.json
 
-      # fixed download links: .../releases/download/apk-latest/urtv-screensaver.apk and urtv-home.apk
+      # fixed download links: .../releases/download/apk-latest/urtv-screensaver.apk, urtv-home.apk and latest.json
       - name: Publish to the apk-latest release
         if: github.ref_name == 'master'
         uses: softprops/action-gh-release@v2
@@ -74,11 +82,12 @@ jobs:
           name: Latest APKs
           body: "Both apps at version 3.${{ github.run_number }}, built from ${{ github.sha }}"
           files: |
+            latest.json
             urtv-screensaver.apk
             urtv-home.apk
           make_latest: true
 
-      # and every build kept under its own number, the apps' version: APK_TAG=v3.N optimize/install.sh all
+      # and every build kept under its own number: APK_TAG=v3.N optimize/install.sh all
       - name: Publish to the numbered release
         if: github.ref_name == 'master'
         uses: softprops/action-gh-release@v2
@@ -87,6 +96,7 @@ jobs:
           name: UrTV 3.${{ github.run_number }}
           body: "Both apps at version 3.${{ github.run_number }}, built from ${{ github.sha }}"
           files: |
+            latest.json
             urtv-screensaver.apk
             urtv-home.apk
           make_latest: false
@@ -100,6 +110,7 @@ jobs:
           name: Test build from next
           body: "Both apps at version 3.${{ github.run_number }}, built from next at ${{ github.sha }}. For testing only."
           files: |
+            latest.json
             urtv-screensaver.apk
             urtv-home.apk
           prerelease: true

@@ -45,4 +45,7 @@
     <string name="latitude" translatable="false">24.6877</string>
     <string name="longitude" translatable="false">46.7219</string>
     <string name="timezone" translatable="false">Asia/Riyadh</string>
+
+    <!-- When an update is found it is downloaded here; the version is read from this file. -->
+    <string name="update_base" translatable="false">https://github.com/tshi-dev/UrTV/releases/download/apk-latest/</string>
 </resources>

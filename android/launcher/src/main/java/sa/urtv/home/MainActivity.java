@@ -105,8 +105,10 @@ public class MainActivity extends Activity {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Runnable rotateWallpaper = this::nextWallpaper;
     static final long WALLPAPER_INTERVAL_MS = 10 * 60 * 1000;
-    private TextView greeting, weatherLine, clock, ampm, date, title, wifiPill, appsLabel;
+    private TextView greeting, weatherLine, clock, ampm, date, title, wifiPill, appsLabel, updatePill;
     private Greeting greetingLine;
+    /** the self-update pill keeps its id: it is added to and removed from the bar while the app runs */
+    private static final int UPDATE_PILL_ID = 0x0A11D0;
     private int glowColor = 0xFF3A3A3A;
     private ValueAnimator glowAnim;
     private int lastFocusedId = View.NO_ID;
@@ -122,6 +124,8 @@ public class MainActivity extends Activity {
         @Override public void onReceive(Context c, Intent i) {
             updateClock();
             updateWifi();
+            SelfUpdater.check(MainActivity.this);
+            updateUpdatePill();
         }
     };
     // the sleep timer started, ended or was cancelled (here, or from the computer): the pill follows at once
@@ -159,6 +163,12 @@ public class MainActivity extends Activity {
         registerReceiver(packages, pf);
         registerReceiver(dockChanged, new IntentFilter(Dock.CHANGED));
         registerReceiver(sleepChanged, new IntentFilter(SleepTimer.CHANGED));
+
+        // the self-update: a newer build downloads in the background, then the pill appears
+        updatePill = (TextView) findViewById(UPDATE_PILL_ID);
+        SelfUpdater.listen(this::updateUpdatePill);
+        SelfUpdater.check(this);
+        updateUpdatePill();
     }
 
     @Override
@@ -171,6 +181,8 @@ public class MainActivity extends Activity {
         registerReceiver(tick, tf);
         updateClock();
         updateWifi();
+        updateUpdatePill();
+        SelfUpdater.check(this);
         homeCard.refresh();
         View last = lastFocusedId == View.NO_ID ? null : findViewById(lastFocusedId);
         if (last == null && !dockCards.isEmpty()) last = dockCards.get(0);
@@ -368,6 +380,14 @@ public class MainActivity extends Activity {
         date = text(14, "regular", 0xFFC6BBA4);
         date.setSingleLine(true);
         left.addView(date, llp(-2, -2, 0, dp(-6), dp(4), 0));   // the display font leaves a deep gap under its digits
+        // the self-update, hidden until a newer build is on the TV: a gold chip at the foot of the
+        // clock block (the pill row now reaches the greeting, and the weather sits under it)
+        updatePill = pill("تحديث جاهز", R.drawable.ic_update);
+        updatePill.setId(UPDATE_PILL_ID);
+        updatePill.setTextColor(0xFFFFD79A);
+        updatePill.setOnClickListener(v -> SelfUpdater.install(this));
+        updatePill.setVisibility(View.GONE);
+        left.addView(updatePill, llp(-2, dp(30), 0, dp(10), 0, 0));
         for (TextView t : new TextView[]{greeting, weatherLine, clock, ampm, date}) t.setShadowLayer(dp(3), 0, dp(1), 0x80000000);
         left.setGravity(Gravity.RIGHT);
         for (TextView t : new TextView[]{greeting, weatherLine, date}) t.setGravity(Gravity.RIGHT);
@@ -607,6 +627,14 @@ public class MainActivity extends Activity {
             p.setNextFocusRightId(i == pills.size() - 1 ? p.getId() : pills.get(i + 1).getId());
             p.setNextFocusUpId(p.getId());
             p.setNextFocusDownId(d > 0 ? dockCards.get(Math.min(d - 1, d / 2)).getId() : p.getId());
+        }
+        if (updatePill != null && updatePill.getVisibility() == View.VISIBLE) {
+            // the gold chip is at the foot of the clock block: DOWN from the first pill reaches it
+            updatePill.setNextFocusLeftId(updatePill.getId());
+            updatePill.setNextFocusRightId(updatePill.getId());
+            updatePill.setNextFocusUpId(pills.get(0).getId());
+            updatePill.setNextFocusDownId(pills.get(0).getNextFocusDownId());
+            pills.get(0).setNextFocusDownId(updatePill.getId());
         }
         int topId = pills.get(0).getId();
         for (int i = 0; i < d; i++) {
@@ -879,6 +907,32 @@ public class MainActivity extends Activity {
         StringBuilder b = new StringBuilder(s.length());
         for (char c : s.toCharArray()) b.append(c >= '0' && c <= '9' ? (char) ('٠' + (c - '0')) : c);
         return b.toString();
+    }
+
+    /**
+     * The self-update pill: only there while a newer build is downloading or already on the TV.
+     * Pressing it when it says «تحديث جاهز» is the one press the launcher update takes.
+     */
+    private void updateUpdatePill() {
+        if (updatePill == null) return;
+        SelfUpdater.State state = SelfUpdater.state();
+        boolean show = state == SelfUpdater.State.READY || state == SelfUpdater.State.DOWNLOADING
+                || state == SelfUpdater.State.INSTALLING;
+        if (!show) {
+            if (updatePill.getVisibility() == View.VISIBLE) {
+                updatePill.setVisibility(View.GONE);
+                wireFocus();
+            }
+            return;
+        }
+        String label = state == SelfUpdater.State.DOWNLOADING
+                ? "تحديث " + arabicDigits(String.valueOf(SelfUpdater.progress())) + "٪"
+                : state == SelfUpdater.State.INSTALLING ? "جارٍ التثبيت…" : "تحديث جاهز";
+        updatePill.setText(label);
+        if (updatePill.getVisibility() != View.VISIBLE) {
+            updatePill.setVisibility(View.VISIBLE);
+            wireFocus();
+        }
     }
 
     /** Connected or not comes from ConnectivityManager: WifiManager hides the network (id -1, "<unknown ssid>")

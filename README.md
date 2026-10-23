@@ -74,7 +74,7 @@ Yes, anytime: our apps are removed, what we turned off comes back on, the TV's o
 <sub>`optimize/reset.sh`</sub>
 
 #### A new version came out?
-Update both apps; all your settings stay. The screen itself updates on its own. The settings row tells you when one exists.
+Update both apps; all your settings stay. The screen itself updates on its own, and the home screen installs its own new build from a gold «تحديث جاهز» pill. The settings row tells you when one exists.
 <sub>`optimize/install.sh all`</sub>
 
 #### The TV updated its system and locked our app out?
@@ -91,7 +91,7 @@ screen: [docs/RECREATE-PROMPT.md](docs/RECREATE-PROMPT.md).
 | | | |
 |---|---|---|
 | **شاشة تلفزيونك** · screensaver | Clock, Hijri date, prayer times and iqama, Ramadan, your teams' matches, weather, markets, and beside the clock your choice of new episodes, today's prayers, the 5-day forecast, all your teams' games, a stock watchlist, or a verse/hadith of the day, over Saudi landscapes | `urtv-screensaver.apk` |
-| **تلفزيونك** · home screen | Clean Arabic launcher: favourites row (5–10 apps) arranged in «ترتيب المفضلة», all apps, inputs, Wi-Fi, settings; «المهام» (tasks, by voice too), optional card from the screensaver (off by default). The «تلاوة» pill opens the Quran and the radio, with the adhan at Umm al-Qura times. App names show in Arabic: the name the setup agent gave it on this TV (`optimize/dock.sh names` / `name`), else the app's own Arabic name, else the one in `res/values/app_names.xml`, else its own name | `urtv-home.apk` |
+| **تلفزيونك** · home screen | Clean Arabic launcher: favourites row (5–10 apps) arranged in «ترتيب المفضلة», all apps, inputs, Wi-Fi, settings; «المهام» (tasks, by voice too), optional card from the screensaver (off by default). The «تلاوة» pill opens the Quran and the radio, with the adhan at Umm al-Qura times. It also installs its own new build from this repository's releases. App names show in Arabic: the name the setup agent gave it on this TV (`optimize/dock.sh names` / `name`), else the app's own Arabic name, else the one in `res/values/app_names.xml`, else its own name | `urtv-home.apk` |
 | **Two free apps** | [TV Bro](https://github.com/truefedex/tv-bro), a web browser for the TV, and [SmartTube](https://github.com/yuliskov/SmartTube), YouTube without ads, from their own releases (skip with `SKIP_EXTRAS=1`) | `optimize/install.sh extras` |
 | **Speed-up** | Telemetry, ads and demos off (reversibly), closed apps frozen, Play Store kept from running in the background, faster animations | `optimize/` |
 
@@ -121,6 +121,16 @@ remote keys and the ADB controls.
 <td width="50%"><img src="docs/screenshots/06-adhan-player.jpg" alt="The player during an adhan" width="100%"><br><b>During the adhan</b><br>The muezzin's name, and no skip or seek: the surah waits and comes back.</td>
 </tr>
 </table>
+
+### The home screen updates itself
+
+A push to `master` publishes `latest.json` with the build number and the commit; the home screen reads it,
+downloads `urtv-home.apk` in the background, refuses an APK signed with another key, and shows a gold
+«تحديث جاهز» pill. One press opens Android's installer; the app restarts on the new build. It needs the
+install-permission appop, which `optimize/install.sh launcher` grants over ADB.
+
+<p align="center"><img src="docs/screenshots/09-update-pill.jpg" alt="The gold «تحديث جاهز» pill under the clock on the home screen" width="70%"></p>
+
 
 ## For agents and scripts
 
