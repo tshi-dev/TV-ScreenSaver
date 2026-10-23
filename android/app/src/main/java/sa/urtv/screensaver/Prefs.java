@@ -16,8 +16,11 @@ final class Prefs {
 
     // TheSportsDB id, Arabic name; more teams come from the in-app search
     static final String[][] TEAM_PRESETS = {
-        {"136013", "الهلال"}, {"136137", "المنتخب السعودي"},
-    };
+    {"133738", "ريال مدريد"},
+    {"133739", "برشلونة"},
+    {"133613", "مانشستر سيتي"},
+    {"133664", "بايرن ميونخ"},
+};
 
     // League name exactly as TheSportsDB spells it (checked from CI by .github/tools/team_ids.py), Arabic label.
     // Their clubs come from assets/shared/teams.json (Teams), which CI builds from these leagues' matches
@@ -89,16 +92,31 @@ final class Prefs {
 
     /** Followed teams in priority order, "id|name". Migrates the old two team fields once. */
     List<String> teams() {
-        if (!sp.contains("teams")) {
-            List<String> v = new ArrayList<>();
-            for (int slot = 1; slot <= 2; slot++) {
-                String[] def = TEAM_PRESETS[slot - 1];
-                String id = sp.getString("team" + slot + "Id", def[0]);
-                if (!id.isEmpty()) v.add(id + "|" + sp.getString("team" + slot + "Name", def[1]));
+        
+if (!sp.contains("teams")) {
+    List<String> v = new ArrayList<>();
+    boolean hasOldPrefs = sp.contains("team1Id")
+            || sp.contains("team2Id")
+            || sp.contains("team1Name")
+            || sp.contains("team2Name");
+
+    if (hasOldPrefs) {
+        for (int slot = 1; slot <= 2; slot++) {
+            String[] def = TEAM_PRESETS[slot - 1];
+            String id = sp.getString("team" + slot + "Id", def[0]);
+            if (!id.isEmpty()) {
+                v.add(id + "|" + sp.getString("team" + slot + "Name", def[1]));
             }
-            return v;
         }
-        return list("teams");
+    } else {
+        for (String[] def : TEAM_PRESETS) {
+            v.add(def[0] + "|" + def[1]);
+        }
+    }
+    return v;
+}
+return list("teams");
+
     }
 
     /** false when already followed or the list is full */
