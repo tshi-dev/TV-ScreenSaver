@@ -675,7 +675,7 @@ public class MainActivity extends Activity {
             rows.add(inputRow(inputLabel(t), () -> {
                 Intent i = new Intent(Intent.ACTION_VIEW, TvContract.buildChannelUriForPassthroughInput(t.getId()));
                 i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                if (!launch(i)) openPackage(inputPickerPkg);
+                if (!launch(i) && !launch(new Intent(Intent.ACTION_VIEW, android.net.Uri.parse("alliance://start_signal")))) openPackage(inputPickerPkg);
             }));
         }
         if (isInstalled(liveTvPkg)) rows.add(inputRow("البث التلفزيوني", () -> openPackage(liveTvPkg)));
