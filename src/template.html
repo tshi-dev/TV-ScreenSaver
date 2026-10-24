@@ -217,6 +217,10 @@
     font-size:calc(clamp(11px,.92vw,17px)*var(--z,1));color:#B9AE96}
   /* a full hadith: the isnad and the narration small and muted, the Prophet's words ﷺ at full size */
   .week li.quote.hadith{font-size:calc(clamp(15px,1.3vw,25px)*var(--z,1));line-height:1.7}
+  .week li.news-item{display:block;white-space:normal;line-height:1.35;padding:.55vh 0}
+  .week li.news-item .news-title{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;
+    max-width:none;white-space:normal;overflow:hidden;text-overflow:ellipsis;color:#F6EEDC}
+  .week li.news-item .news-meta{display:block;margin-top:.18em;color:#9C9279;font-size:.68em}
   /* long texts a step smaller (by length, see quoteSize()), so the card never grows past the clock row */
   .week li.quote.q1{font-size:calc(clamp(15px,1.3vw,25px)*var(--z,1))}
   .week li.quote.q2{font-size:calc(clamp(14px,1.16vw,22px)*var(--z,1))}
@@ -593,7 +597,7 @@ const _num = (k, d) => { const v = parseFloat(_Q.get(k)); return isNaN(v) ? d : 
 // the city's time zone, #tz=: the clock, prayers, matches and dates all go by it; one this browser does not know is Riyadh
 const _tzOk = z => { try{ new Intl.DateTimeFormat('en',{timeZone:z}); return true; }catch(e){ return false; } };
 // the cards a slot can show (Prefs.PANELS in the app is the same list); «none» is the absence of one
-const CARD_KINDS = ['shows','prayers','forecast','hourly','prayerrow','matches','verse','wisdom','adhkar','stocks','tasks','year','smart','today'];
+const CARD_KINDS = ['shows','prayers','forecast','hourly','prayerrow','matches','news','verse','wisdom','adhkar','stocks','tasks','year','smart','today'];
 const CONFIG = {
   city: _Q.get('city') || 'الرياض',
   latitude: _num('lat', 24.7136),
@@ -693,7 +697,7 @@ const LS = {
   stocks: 'stocks:' + CONFIG.stocks.slice().sort().join(','),
   mk: 'mk:' + CONFIG.markets.join(','),
   matches: 'matchesOk:' + CONFIG.teamIds.join(',') + '|' + CONFIG.leagues.join(','),
-  snap: 'snap6:' + location.hash,
+  snap: 'snap7:' + location.hash,
 };
 
 // every number on the screen goes through ar() or a formatter built on NU, so CONFIG.digits decides them all
@@ -947,6 +951,32 @@ function tickPrayer(){
     setText(elT, fmt12(cur.h, cur.mi));
     setHTML(elC, 'الإقامة بعد <b>' + humanRemaining(Math.max(60, Math.ceil(left)*60)) + '</b>');
     return;
+  }
+
+  // Between Fajr's iqama window and half an hour after sunrise, show the sunrise milestone.
+  // Before Fajr keep the normal Fajr countdown; after 30 minutes sunrise gives way to Dhuhr.
+  if(DAY_TIMES?.Sunrise){
+    const [sh, sm] = String(DAY_TIMES.Sunrise).split(':').map(Number);
+    const sunriseAt = sh*60 + sm, fajr = PRAYERS.find(x => x.key === 'Fajr');
+    const fajrGap = CONFIG.iqama.Fajr || 0;
+    if(fajr && mins >= fajr.h*60 + fajr.mi + fajrGap && mins < sunriseAt){
+      panel.classList.remove('now');
+      setText(elL, 'الشروق بعد');
+      setText(elN, 'الشروق');
+      setText(elT, fmt12(sh, sm));
+      setHTML(elC, 'بعد <b>' + humanRemaining(Math.max(0, Math.round((sunriseAt-mins)*60))) + '</b>');
+      return;
+    }
+    const elapsed = mins - sunriseAt;
+    if(elapsed >= 0 && elapsed < 30){
+      panel.classList.remove('now');
+      setText(elL, elapsed < 1 ? 'حان وقت الشروق' : 'وقت الشروق');
+      setText(elN, 'الشروق');
+      setText(elT, fmt12(sh, sm));
+      setHTML(elC, elapsed < 1 ? 'حان الآن'
+        : 'مضى على الشروق <b>' + humanRemaining(Math.floor(elapsed*60)) + '</b>');
+      return;
+    }
   }
 
   if(panel.classList.contains('now')) panel.classList.remove('now');
@@ -2112,8 +2142,63 @@ function liveRect(){
 
 let FORECAST = [];
 try{ FORECAST = JSON.parse(localStorage.getItem(LS.forecast) || '[]') || []; }catch(e){}
-const PANEL_TITLE = {today:'يومك', shows:'هذا الأسبوع', prayers:'مواقيت اليوم', forecast:'الأيام القادمة', hourly:'الساعات القادمة', matches:CONFIG.leagues.length ? 'المباريات' : 'مباريات فرقك', tasks:'المهام', year:'السنة'};
+const PANEL_TITLE = {today:'يومك', shows:'هذا الأسبوع', prayers:'مواقيت اليوم', forecast:'الأيام القادمة', hourly:'الساعات القادمة', matches:CONFIG.leagues.length ? 'المباريات' : 'مباريات فرقك', news:'أخبار السعودية والمدينة', tasks:'المهام', year:'السنة'};
 const LISTS = ['matches', 'stocks', 'tasks', 'shows'];   // the kinds that page through their rows
+
+let NEWS_ITEMS = [];
+let NEWS_LOADING = false;
+const NEWS_CACHE_KEY = 'news:' + CONFIG.city;
+try{
+  const cached = JSON.parse(localStorage.getItem(NEWS_CACHE_KEY) || 'null');
+  if(cached && Array.isArray(cached.items) && Date.now() - cached.at < 24*3600000) NEWS_ITEMS = cached.items;
+}catch(e){}
+
+function parseNews(xml){
+  const doc = new DOMParser().parseFromString(xml, 'text/xml');
+  if(doc.querySelector('parsererror')) return [];
+  return Array.from(doc.querySelectorAll('item')).slice(0, 8).map(item => ({
+    title: (item.querySelector('title')?.textContent || '').trim(),
+    source: (item.querySelector('source')?.textContent || '').trim(),
+    link: (item.querySelector('link')?.textContent || '').trim(),
+    date: Date.parse(item.querySelector('pubDate')?.textContent || '') || 0,
+  })).filter(x => x.title && /^https:\/\//.test(x.link));
+}
+
+async function loadNews(){
+  if(NEWS_LOADING) return;
+  NEWS_LOADING = true;
+  const q = `\"السعودية\" OR \"${CONFIG.city}\"`;
+  const feed = `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=ar&gl=SA&ceid=SA:ar`;
+  const routes = [
+    [feed, async x => x.text()],
+    ['https://api.allorigins.win/get?url=' + encodeURIComponent(feed), async x => (await x.json()).contents],
+  ];
+  try{
+    for(const [url, unwrap] of routes){
+      try{
+        const r = await fetchT(url, 12000);
+        if(!r.ok) continue;
+        const xml = await unwrap(r);
+        const items = parseNews(xml);
+        if(!items.length) continue;
+        NEWS_ITEMS = items;
+        try{ localStorage.setItem(NEWS_CACHE_KEY, JSON.stringify({at:Date.now(), items})); }catch(e){}
+        renderPanel(false, 'news');
+        break;
+      }catch(e){}
+    }
+  }finally{ NEWS_LOADING = false; }
+}
+
+function newsRows(){
+  return NEWS_ITEMS.slice(0, 4).map(item => {
+    const age = item.date ? Math.max(0, Math.round((Date.now() - item.date) / 60000)) : null;
+    const when = age === null ? '' : age < 1 ? 'الآن' : age < 60 ? `قبل ${ar(age)} د` : `قبل ${ar(Math.floor(age/60))} س`;
+    const source = [item.source, when].filter(Boolean).map(esc).join(' · ');
+    return `<li class=\"news-item\"><span class=\"news-title\">${esc(item.title)}</span><span class=\"news-meta\">${source}</span></li>`;
+  });
+}
+
 
 // ---- «يومك» (today): the day in one card: the next prayer, the next game of a followed team, the first open task, the next
 // occasion. A line with nothing to say is left out.
@@ -2248,6 +2333,7 @@ function renderCard(card, animate, keepSize){
   else if(P === 'hourly') rows = hourlyRows();
   else if(P === 'prayerrow'){ const q = prayerRowCard(); paintHd(hd, q.title); rows = q.rows; }
   else if(P === 'matches') rows = matchRows(card);
+  else if(P === 'news') rows = newsRows();
   else if(P === 'year') rows = [yearCard(card)];
   else if(P === 'today'){ const q = todayCard(); paintHd(hd, q.title); rows = q.rows; }
   else if(P === 'tasks') rows = CONFIG.tasks.map(t => `<li class="task"><span>${esc(t)}</span></li>`);
@@ -2261,7 +2347,7 @@ function renderCard(card, animate, keepSize){
     if(P === 'matches' && !MATCHES_LOADED && ul.firstElementChild && !ul.firstElementChild.classList.contains('empty')) return;
     if(P === 'matches' && ul.firstElementChild && ul.firstElementChild.classList.contains('empty') && ul.firstElementChild.textContent === matchesEmptyText()) return;   // the saved games stay until the first answer
     ul.classList.remove('flip');
-    setHTML(ul, `<li class="empty">${P === 'matches' ? matchesEmptyText() : P === 'tasks' ? 'لا مهام اليوم' : 'لا تتوفر بيانات الآن'}</li>`);
+    setHTML(ul, `<li class="empty">${P === 'matches' ? matchesEmptyText() : P === 'tasks' ? 'لا مهام اليوم' : P === 'news' ? 'جارٍ جلب آخر الأخبار…' : 'لا تتوفر بيانات الآن'}</li>`);
     return;
   }
   const per = card.cap || (P === 'matches' ? MATCH_ROWS : WEEK_ROWS);
@@ -3161,6 +3247,7 @@ function boot(){
   renderPanel(false, ...CARD_KINDS.filter(k => k !== 'shows'));   // shows: its own data arrives with prayers, weather, matches
   if(NEEDS_MATCHES) loadMatches();
   loadPrayers(); if(USES('shows')) loadWeek(); loadWeather();
+  if(USES('news')){ loadNews(); setInterval(loadNews, 5*60*1000); }
   applyNight(); pixelShift();
 
   nowPlayingTick();
@@ -3209,6 +3296,7 @@ function bootWidget(){
   if(USES('adhkar') || USES('prayers') || USES('prayerrow')){ loadPrayers(); periodic(loadPrayers, 6*3600*1000); }
   if(USES('forecast') || USES('hourly')){ loadWeather(); periodic(loadWeather, 30*60*1000); }
   if(USES('matches')){ loadMatches(); periodic(loadMatches, 30*60*1000); periodic(loadLive, 2*60000); }
+  if(USES('news')){ loadNews(); setInterval(loadNews, 5*60*1000); }
   if(USES('stocks')){ loadMarkets(); periodic(loadMarkets, 15*60*1000); }
   cardTimers();
   let lastDay = riyadhDayNumber();
