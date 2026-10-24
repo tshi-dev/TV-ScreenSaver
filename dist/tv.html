@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <!-- the build: UTC time (YYYYMMDDHHMMSS) of the newest commit of the page's sources, put in by src/build.py. The app loads the page with the newer stamp (its own
      copy or a downloaded one), never by file time, and does not keep a download whose stamp is older than its own (Updater, PageStamp). -->
-<meta name="urtv-build" content="20261023193544">
+<meta name="urtv-build" content="20261024101206">
 <title>شاشة تلفزيونك</title>
 <style>
   @font-face{font-family:'Thmanyah';font-weight:300;font-style:normal;font-display:block;src:url("https://raw.githubusercontent.com/tshi-dev/UrTV/master/assets/fonts/Thmanyah-Light.woff2") format("woff2")}
@@ -2158,7 +2158,7 @@ function todayCard(){
 }
 
 // ---- a followed team's game under way, big: its score, the minute and «مباشر» (item 2). The matches card and the bottom slot
-// show it alone, with both crests where there are crests (the launcher's card), until it ends; then they go back to the list.
+// show it alone, with both crests where there are crests (on both match surfaces), until it ends; then they go back to the list.
 function liveWhen(ev){   // «مباشر» and «الدقيقة ٦٧» / «استراحة» / «بدأت ٦:٣٠ م»
   const p = hmParts(toDate(ev));
   return `<span class="live">مباشر</span> · ${liveStatus(ev, ar(fmt12(+p.hour % 24, +p.minute)))}`;
@@ -2428,12 +2428,12 @@ function forecastRows(){
   });
 }
 
-// ---- club crests on the launcher's matches card: TheSportsDB's badge, which the events already carry
+// ---- club crests on match cards: TheSportsDB's badge, which the events already carry
 // (strHomeTeamBadge / strAwayTeamBadge, with idHomeTeam / idAwayTeam). No request of its own except the picture,
 // once per club: kept as a 48 px copy in localStorage and fetched again only when the badge's address changes.
 // The launcher's page is a file:// document and the badge host may send no Access-Control-Allow-Origin: fetch() is then refused (or
 // the answer is no picture). The club keeps its address alone and the row shows a plain <img> of it, which needs no CORS.
-const CRESTS_ON = CONFIG.widget && USES('matches');
+const CRESTS_ON = USES('matches');
 const CREST_PX = 48, CREST_KEEP = 60, CREST_PER_ROUND = 10;
 let CRESTS = {};   // team id -> {u: badge address, d: data: URI of the small copy, none when only the address could be kept}
 try{ CRESTS = JSON.parse(localStorage.getItem('crests') || '{}') || {}; }catch(e){}

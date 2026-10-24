@@ -1258,13 +1258,21 @@ for (const [width, height] of [[461, 250], [1920, 1080], [1280, 720], [960, 540]
   check(`${tag}: after a restart the crests are back at once, from the saved copy`, back === 3 && seen.length === 3, back + ' ' + seen.length);
   await ctx.close();
 }
-{   // the screensaver itself, and every other card, show no crest
+{   // the screensaver uses the same available crests, and keeps the name if one is missing
   const seen = [];
   const { p, ctx, errors } = await open('tv.html', 'teams=136013&panel=matches', { net: crestNet(seen) });
-  await p.evaluate(CREST_GAMES(SHORT_GAMES) + ' renderPanel(false); loadCrests();');
+  await p.evaluate(CREST_GAMES(SHORT_GAMES) + ' renderPanel(false);');
+  await p.evaluate(() => loadCrests());
   await p.waitForTimeout(200);
-  check('the screensaver shows no crest and asks for none', !errors.length && seen.length === 0
-    && await p.evaluate(() => !document.querySelector('img.cr')), seen.join());
+  const r = await p.evaluate(() => {
+    const imgs = [...document.querySelectorAll('#week-list img.cr')];
+    const rows = [...document.querySelectorAll('#week-list li > span:first-child')];
+    const guestWithoutBadge = rows[1].querySelectorAll('.tm')[1];
+    return { count: imgs.length, loaded: imgs.every(i => i.src.startsWith('data:image/png') && i.naturalWidth > 0 && i.naturalWidth <= 48),
+      missingName: guestWithoutBadge.querySelector('img') === null && guestWithoutBadge.textContent.trim().length > 2 };
+  });
+  check('the screensaver shows available crests and keeps the name without a badge', !errors.length && seen.length === 3
+    && r.count === 3 && r.loaded && r.missingName, JSON.stringify({ requests: seen.length, ...r }));
   await ctx.close();
 }
 for (const [width, height] of [[461, 250], [1920, 1080], [1280, 720], [960, 540]]) {
